@@ -1,0 +1,45 @@
+{
+  "name": "slack2teams",
+  "version": "0.1.0",
+  "description": "Slack to MS Teams migration tool",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "migrate-users": "tsc && node dist/users.js",
+    "migrate-channels": "tsc && node dist/channels.js",
+    "sharepoint": "tsc && node dist/sharepoint.js",
+    "download-files": "tsc && node dist/download-files.js",
+    "migrate-files": "tsc && node dist/migrate-files.js",
+    "migrate-messages": "tsc && node dist/messages.js",
+    "complete-migration": "tsc && node dist/finish.js",
+    "show-token": "tsc && node dist/token.js"
+  },
+  "keywords": [],
+  "author": "alamit",
+  "maintainers": [
+    {
+      "name": "alamit",
+      "email": "adrien@rubiku.be"
+    },
+    {
+      "name": "GregMit",
+      "email": "gregoire@rubiku.be"
+    }
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/lodash": "^4.17.1",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^20.12.11",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.8.0",
+    "csv-parse": "^5.5.5",
+    "dotenv": "^16.4.5",
+    "loading-cli": "^1.1.2",
+    "lodash": "^4.17.21",
+    "mime-types": "^2.1.35",
+    "yesno": "^0.4.0"
+  }
+}
