@@ -101,7 +101,7 @@ const parseTextObject = (textObj: any, mappers: Mappers, mentions: Mention[]) =>
       )}</a>`;
       break;
     case 'emoji':
-      text = textObj.unicode ? `&#x${textObj.unicode};` : '';
+      text = textObj.unicode ? `&#x${textObj.unicode.split('-')[0]};` : '';
       break;
     case 'user':
       const { id: userId, displayName } = mappers.fromSlackUserId(textObj.user_id);
