@@ -104,6 +104,8 @@ const main = async () => {
       } else if (file.mode !== 'hosted') {
         error =
           'Only hosted files are supported, canvases, snippets, and other files are not supported.';
+      } else if (file.size >= 1024 * 1024 * 250) {
+        error = 'Files larger than 250MB are not supported.';
       }
       return {
         id: file.id,
@@ -131,7 +133,10 @@ const main = async () => {
   console.log(`${ok.length} will be downloaded.`);
   _.forEach(rest, (files, error) => console.log(`${files.length} files skipped: ${error}`));
   // console.log(`${} files are hosted on slack.`);
-  fs.writeFileSync(path.join(STATE_DIRECTORY, 'files.json'), JSON.stringify(ok, null, 2));
+  fs.writeFileSync(
+    path.join(STATE_DIRECTORY, 'files.json'),
+    JSON.stringify(filesToDownload, null, 2)
+  );
   console.log('Files metadata saved to state/files.json');
   console.log('Downloading files...');
   //   console.table(filesToDownload);
