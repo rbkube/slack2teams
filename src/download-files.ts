@@ -57,7 +57,7 @@ const writeFilesToDisk = (files: DownloadFile[]) => {
   const res = _.reduce(
     promises,
     (acc, next) => {
-      return acc.then(() => sleep(200)).then(next);
+      return acc.then(() => sleep(50)).then(next);
     },
     Promise.resolve()
   );
@@ -98,11 +98,12 @@ const main = async () => {
       let filepath = path.join(filesDir, `${file.id}.${file.filetype}`);
       let error;
       if (file.mimetype === 'application/octet-stream' || !file.mimetype) {
-        error = 'Corrupted file';
+        error = 'Unknown file type, file is probably corrupted.';
       } else if (file.mode === 'external') {
         error = 'File hosted on an external service';
-      } else if (file.mode === 'email') {
-        error = 'Unprocessable email file';
+      } else if (file.mode !== 'hosted') {
+        error =
+          'Only hosted files are supported, canvases, snippets, and other files are not supported.';
       }
       return {
         id: file.id,
@@ -122,17 +123,19 @@ const main = async () => {
     });
   });
 
-  console.log(`${filesToDownload.length} files found in the slack export.`);
-  fs.writeFileSync(
-    path.join(STATE_DIRECTORY, 'files.json'),
-    JSON.stringify(filesToDownload, null, 2)
-  );
+  const unique = _.uniqBy(filesToDownload, 'id');
+
+  console.log(`${unique.length} files found in the slack export.`);
+  const grouped = _.groupBy(unique, 'error');
+  const { undefined: ok, ...rest } = grouped;
+  console.log(`${ok.length} will be downloaded.`);
+  _.forEach(rest, (files, error) => console.log(`${files.length} files skipped: ${error}`));
+  // console.log(`${} files are hosted on slack.`);
+  fs.writeFileSync(path.join(STATE_DIRECTORY, 'files.json'), JSON.stringify(ok, null, 2));
   console.log('Files metadata saved to state/files.json');
   console.log('Downloading files...');
   //   console.table(filesToDownload);
-  await writeFilesToDisk(filesToDownload);
-  const ignoredFiles = _.sumBy(filesToDownload, (file) => (file.error ? 1 : 0));
-  console.log(`Skipped ${ignoredFiles} files.`);
+  await writeFilesToDisk(ok);
 };
 
 main();
