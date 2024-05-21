@@ -20,6 +20,7 @@ const sanitizeChannels = (channels: any[]) => {
       general: channel.is_general as boolean,
       creator: channel.creator as string,
       members: channel.members as string[],
+      created: channel.created as number,
     };
   });
 };
@@ -33,11 +34,12 @@ const mapUsers = (
       ...channel,
       creator: mapper(channel.creator),
       members: _.map(channel.members, mapper).filter((v) => !!v),
+      created: new Date(channel.created * 1000).toISOString(),
     };
   });
 };
 
-const createChannelsGraphPayload = (channels: ReturnType<typeof mapUsers>, ownerId?: string) => {
+const createChannelsGraphPayload = (channels: ReturnType<typeof mapUsers>) => {
   return channels.flatMap((channel) => {
     if (channel.general) return [];
     return [
@@ -48,20 +50,14 @@ const createChannelsGraphPayload = (channels: ReturnType<typeof mapUsers>, owner
           '@microsoft.graph.channelCreationMode': 'migration',
           displayName: channel.name,
           description: channel.description,
-          createdDateTime: '2020-03-14T11:22:17.047Z',
+          createdDateTime: channel.created,
         },
       },
     ];
   });
 };
 
-const createChannels = async (
-  filepath: string,
-  teamId: string,
-  userMapper: (str: string) => { role: string; id: string } | null
-) => {
-  const raw = readChannels(filepath);
-  const channels = mapUsers(sanitizeChannels(raw), userMapper);
+const createChannels = async (channels: ReturnType<typeof mapUsers>, teamId: string) => {
   const teamsGeneral = await MSGraph.fetch(`teams/${teamId}/primaryChannel`, {}).then((res) =>
     res.json()
   );
@@ -91,35 +87,37 @@ const createChannels = async (
 
 const main = async () => {
   const users = JSON.parse(fs.readFileSync(path.join(STATE_DIRECTORY, 'users.json'), 'utf-8'));
+  const keyedUsers = _.keyBy(users, 'slackId');
+  const userMapper = (slackId) =>
+    keyedUsers[slackId]
+      ? { role: _.lowerCase(keyedUsers[slackId].userType), id: keyedUsers[slackId].entraId }
+      : null;
 
   const args = process.argv.slice(2);
   const teamName = args[0] ?? 'Slack Archive';
   await MSGraph.login();
 
+  const raw = readChannels(path.join(SLACK_EXPORT_PATH, 'channels.json'));
+  const channels = mapUsers(sanitizeChannels(raw), userMapper);
+
+  const teamCreatedAt = channels.find((channel) => channel.general)?.created;
+
   console.log('Creating Team in migration mode...');
   console.log('---------------------------------------------------------------');
-  const team = await MSGraph.createTeam(teamName, 'Slack Archive Team');
+  const team = await MSGraph.createTeam(teamName, 'Slack Archive Team', teamCreatedAt);
   console.log(`Team ${team.id} created successfully!`);
   console.log('---------------------------------------------------------------');
 
   console.log('---------------------------------------------------------------');
   console.log('Processing channels data...');
-  const keyedUsers = _.keyBy(users, 'slackId');
-  const channels = await createChannels(
-    path.join(SLACK_EXPORT_PATH, 'channels.json'),
-    team.id,
-    (slackId) =>
-      keyedUsers[slackId]
-        ? { role: _.lowerCase(keyedUsers[slackId].userType), id: keyedUsers[slackId].entraId }
-        : null
-  );
+  const channelsResult = await createChannels(channels, team.id);
   console.log('---------------------------------------------------------------');
-  console.table(channels);
+  console.table(channelsResult);
   const dir = STATE_DIRECTORY;
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  fs.writeFileSync(path.join(dir, 'channels.json'), JSON.stringify(channels, null, 2));
+  fs.writeFileSync(path.join(dir, 'channels.json'), JSON.stringify(channelsResult, null, 2));
   console.log(`Channels mapping table saved to '${path.join(dir, 'channels.json')}'!`);
 };
 

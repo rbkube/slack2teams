@@ -77,15 +77,14 @@ class GraphClient {
     }
   };
 
-  createTeam = async (name: string, description: string, owner?: TeamUserDTO) => {
+  createTeam = async (name: string, description: string, createdDateTime: string) => {
     try {
       const team = {
         '@microsoft.graph.teamCreationMode': 'migration',
         'template@odata.bind': "https://graph.microsoft.com/v1.0/teamsTemplates('standard')",
         displayName: name,
         description: description,
-        createdDateTime: '2020-03-14T11:22:17.067Z',
-        // members: owner ? [owner] : [],
+        createdDateTime,
       };
       return this.fetch('/teams', {
         method: 'POST',
