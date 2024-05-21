@@ -37,6 +37,7 @@
     "@azure/msal-node": "^2.8.0",
     "csv-parse": "^5.5.5",
     "dotenv": "^16.4.5",
+    "filenamify": "^6.0.0",
     "loading-cli": "^1.1.2",
     "lodash": "^4.17.21",
     "mime-types": "^2.1.35",

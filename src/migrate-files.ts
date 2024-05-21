@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import MSGraph from './ms-graph';
 import { STATE_DIRECTORY } from './constants';
+import filenamify from 'filenamify';
 
 const main = async () => {
   try {
@@ -17,7 +18,7 @@ const main = async () => {
     const res = [];
     for (const file of files) {
       if (file.error) continue;
-      const fileName = `${file.id}-${file.name}`;
+      const fileName = filenamify(`${file.id}-${file.name}`, { replacement: '_' });
       const fileContent = fs.readFileSync(file.filepath);
       const contentType = file.mimetype;
       const sharePoint = channelFolders.find((folder) => folder.slackChannelId === file.channelId);
