@@ -46,6 +46,7 @@ const createChannelsGraphPayload = (channels: ReturnType<typeof mapUsers>) => {
       {
         slackId: channel.slackId,
         slackName: channel.name,
+        archived: channel.archived,
         payload: {
           '@microsoft.graph.channelCreationMode': 'migration',
           displayName: channel.name,
@@ -65,7 +66,13 @@ const createChannels = async (channels: ReturnType<typeof mapUsers>, teamId: str
   const channelGraphPayloads = createChannelsGraphPayload(channels);
 
   const table = [
-    { slackName: 'general', slackId: generalSlackId, channelId: teamsGeneral.id as string, teamId },
+    {
+      slackName: 'general',
+      slackId: generalSlackId,
+      channelId: teamsGeneral.id as string,
+      teamId,
+      archived: false,
+    },
   ];
   for (const channelPayload of channelGraphPayloads) {
     const res = await MSGraph.fetch(`teams/${teamId}/channels`, {
@@ -80,6 +87,7 @@ const createChannels = async (channels: ReturnType<typeof mapUsers>, teamId: str
       slackId: channelPayload.slackId,
       channelId: data.id as string,
       teamId,
+      archived: channelPayload.archived,
     });
   }
   return table;
