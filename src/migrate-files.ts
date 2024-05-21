@@ -6,9 +6,6 @@ import { STATE_DIRECTORY } from './constants';
 const main = async () => {
   try {
     await MSGraph.login();
-    const channels = JSON.parse(
-      fs.readFileSync(path.join(STATE_DIRECTORY, 'channels.json'), 'utf-8')
-    );
 
     const channelFolders = JSON.parse(
       fs.readFileSync(path.join(STATE_DIRECTORY, 'channel-folders.json'), 'utf-8')
