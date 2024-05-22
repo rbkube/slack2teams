@@ -22,42 +22,44 @@ export function fetchWithRetry(
   url: string | URL | Request,
   init?: RequestInit,
   retries = 3,
-  retryDelay = 5000
+  retryDelay = 2000
 ) {
   // Perform the fetch request
   return fetch(url, init).then((response) => {
-    if (response.status === 429) {
+    if (response.ok) {
+      return response;
+    } else {
       // Check if the 'Retry-After' header is present
       const retryAfter = response.headers.get('Retry-After');
 
       if (retryAfter) {
         // Calculate retry delay based on the 'Retry-After' header (in seconds)
         retryDelay = parseInt(retryAfter) * 1000;
+      } else {
+        // Calculate retry delay based on exponential backoff
+        retryDelay *= 2;
       }
 
       // Check if retries are still available
       if (retries > 0) {
-        console.log(`Rate limit exceeded. Retrying in ${retryDelay / 1000} seconds...`);
+        const counter = 3 - retries;
+        console.log(
+          `(Attempt ${counter}/3): Request failed. Retrying in ${retryDelay / 1000} seconds...`
+        );
         // Set a timeout to retry after the specified delay
         setTimeout(() => fetchWithRetry(url, init, retries - 1, retryDelay), retryDelay);
       } else {
-        console.error('No retries left');
+        return response.json().then((json) => {
+          throw {
+            url: response.url,
+            status: response.status,
+            method: init?.method,
+            headers: init?.headers,
+            payload: init?.body,
+            response: json,
+          };
+        });
       }
-    } else if (response.ok) {
-      return response;
-    } else {
-      // Handle other errors
-      //   console.error(response.url, response.status, response.statusText);
-      return response.json().then((json) => {
-        throw {
-          url: response.url,
-          status: response.status,
-          method: init?.method,
-          headers: init?.headers,
-          payload: init?.body,
-          response: json,
-        };
-      });
     }
   });
 }
