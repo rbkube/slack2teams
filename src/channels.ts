@@ -1,3 +1,4 @@
+import { channel } from 'diagnostics_channel';
 import fs from 'fs';
 import _ from 'lodash';
 import path from 'path';
@@ -102,23 +103,35 @@ const main = async () => {
       : null;
 
   const args = process.argv.slice(2);
-  const teamName = args[0] ?? 'Slack Archive';
+  const teamName = `${args[0] ?? 'Slack import'} - `;
   await MSGraph.login();
 
   const raw = readChannels(path.join(SLACK_EXPORT_PATH, 'channels.json'));
   const channels = mapUsers(sanitizeChannels(raw), userMapper);
+  const [active, archived] = _.partition(channels, (channel) => !channel.archived);
 
   const teamCreatedAt = channels.find((channel) => channel.general)?.created;
 
-  console.log('Creating Team in migration mode...');
-  console.log('---------------------------------------------------------------');
-  const team = await MSGraph.createTeam(teamName, 'Slack Archive Team', teamCreatedAt);
+  console.log('Creating Team for Slack active channels...');
+  const team = await MSGraph.createTeam(
+    teamName + 'active',
+    'Slack active channels',
+    teamCreatedAt
+  );
   console.log(`Team ${team.id} created successfully!`);
-  console.log('---------------------------------------------------------------');
+  console.log('Creating Team for Slack archived channels...');
+  const teamArchive = await MSGraph.createTeam(
+    teamName + 'archived',
+    'Slack archived channels',
+    teamCreatedAt
+  );
+  console.log(`Team ${team.id} created successfully!`);
 
   console.log('---------------------------------------------------------------');
   console.log('Processing channels data...');
-  const channelsResult = await createChannels(channels, team.id);
+  const channelsActiveResult = await createChannels(active, team.id);
+  const channelsArchiveResult = await createChannels(archived, teamArchive.id);
+  const channelsResult = [...channelsActiveResult, ...channelsArchiveResult];
   console.log('---------------------------------------------------------------');
   console.table(channelsResult);
   const dir = STATE_DIRECTORY;
