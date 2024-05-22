@@ -30,11 +30,13 @@ class GraphClient {
       body = null,
       method = 'GET',
       headers = {},
+      retries = 3,
     }: {
       params?: Record<string, string>;
       body?: any;
       method?: string;
       headers?: Record<string, string>;
+      retries?: number;
     }
   ) => {
     if (!this.accessToken || isExpired(this.accessToken)) await this.login();
@@ -42,7 +44,7 @@ class GraphClient {
     url.search = new URLSearchParams(params).toString();
     headers.Authorization = `Bearer ${this.accessToken}`;
     if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
-    return fetchWithRetry(url, { headers, method, body });
+    return fetchWithRetry(url, { headers, method, body }, retries);
   };
 
   createOrGetUser = async (user: {

@@ -278,11 +278,11 @@ const slackBlocksToHtml = (message, mappers: Mappers) => {
 
 const preprocess = (messages) => {
   const msgDict = _.keyBy(messages, (msg) => `${msg.user}:${msg.ts}`);
-  //   console.log(msgDict);
   messages.forEach((message) => {
     if (_.has(message, 'replies')) {
       message.replies.forEach((reply) => {
-        msgDict[`${reply.user}:${reply.ts}`].replyTo = `${message.user}:${message.ts}`;
+        if (msgDict[`${reply.user}:${reply.ts}`])
+          msgDict[`${reply.user}:${reply.ts}`].replyTo = `${message.user}:${message.ts}`;
       });
     }
     if (_.has(message, 'attachments')) {
@@ -305,14 +305,20 @@ const main = async () => {
   const usersState = JSON.parse(fs.readFileSync(path.join(STATE_DIRECTORY, 'users.json'), 'utf-8'));
 
   const defaultUser = usersState.default;
-  const users = usersState.users;
+  const users = _.keyBy(usersState.users, 'slackId');
 
-  const channels = JSON.parse(
-    fs.readFileSync(path.join(STATE_DIRECTORY, 'channels.json'), 'utf-8')
+  const channels = _.keyBy(
+    JSON.parse(fs.readFileSync(path.join(STATE_DIRECTORY, 'channels.json'), 'utf-8')),
+    'slackId'
   );
 
-  const files = JSON.parse(
-    fs.readFileSync(path.join(STATE_DIRECTORY, 'files-uploaded.json'), 'utf-8')
+  const files = _.keyBy(
+    JSON.parse(fs.readFileSync(path.join(STATE_DIRECTORY, 'files-uploaded.json'), 'utf-8')),
+    'slackId'
+  );
+  const thumbs = _.keyBy(
+    JSON.parse(fs.readFileSync(path.join(STATE_DIRECTORY, 'thumbs.json'), 'utf-8')),
+    'id'
   );
 
   const messages = _(channels)
@@ -328,9 +334,7 @@ const main = async () => {
             channel: channel.slackId,
           }))
           .filter(
-            (msg) =>
-              msg.type === 'message' &&
-              (!msg.subtype || msg.subtype === 'thread_broadcast' || msg.subtype === 'bot_message')
+            (msg) => msg.type === 'message' && (!msg.subtype || msg.subtype === 'thread_broadcast')
           )
           .value();
       });
@@ -344,7 +348,7 @@ const main = async () => {
 
   const mappers: Mappers = {
     fromSlackChannelId: (id) => {
-      const channel = channels.find((channel) => channel.slackId === id);
+      const channel = channels[id];
       return {
         channelId: channel.channelId,
         channelName: channel.slackName,
@@ -352,18 +356,21 @@ const main = async () => {
       };
     },
     fromSlackUserId: (id) => {
-      const user = users.find((user) => user.slackId === id);
+      const user = users[id];
       if (!user) return { id: defaultUser.entraId, displayName: defaultUser.displayName };
       return { id: user.entraId, displayName: user.displayName };
     },
     fromSlackFileId: (id) => {
-      const file = files.find((file) => file.slackId === id);
+      const file = files[id];
+      const thumb = thumbs[id];
+
       if (!file) return null;
       return {
         id: file.id,
         contentUrl: file.contentUrl,
         name: file.name,
         contentType: 'reference',
+        thumbnailUrl: thumb ? thumb.url : undefined,
       };
     },
     getMessage: (id: string) => {
@@ -387,6 +394,7 @@ const main = async () => {
       let res = await MSGraph.fetch(msg.route, {
         method: 'POST',
         body: JSON.stringify(msg.payload),
+        retries: 1,
       })
         .then((res) => res.json())
         .catch((e) => {
@@ -394,7 +402,6 @@ const main = async () => {
           return null;
         });
       if (!res) res = await MSGraph.fetch(`${msg.route}/${id}`, {}).then((res) => res.json());
-      //   console.log(res);
       processed[pre.user + ':' + pre.ts] = res;
       await sleep(200);
     } catch (e) {
