@@ -43,10 +43,7 @@ export async function fetchWithRetry(
 
     // Check if retries are still available
     if (retries > 0) {
-      const counter = 3 - retries;
-      console.log(
-        `(Attempt ${counter}/3): Request failed. Retrying in ${retryDelay / 1000} seconds...`
-      );
+      console.log(`(${retries} left): Request failed. Retrying in ${retryDelay / 1000} seconds...`);
 
       // Wait for the specified delay before retrying
       await new Promise((resolve) => setTimeout(resolve, retryDelay));
@@ -68,7 +65,7 @@ export async function fetchWithRetry(
 }
 
 export const downloadFile = async (url: string, filepath: string, headers: any = {}) => {
-  const { body } = await fetch(url, { headers });
+  const { body } = await fetchWithRetry(url, { headers });
   const filestream = fs.createWriteStream(filepath);
   await finished(Readable.fromWeb(body as ReadableStream<any>).pipe(filestream));
 };
