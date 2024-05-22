@@ -1,18 +1,21 @@
-const fs = require('fs').promises;
+import path from 'path';
+import fs from 'fs';
 
-export class PersistentQueue<T> {
+export class PersistentQueue<T = any> {
   private queue: T[];
   private persistenceFilePath: string;
   private saveInterval: number;
   private persistenceTimer: NodeJS.Timeout;
 
-  constructor(init: T[], persistenceFilePath: string, saveInterval = 5000) {
-    this.queue = init;
+  constructor(persistenceFilePath: string, saveInterval = 5000) {
     this.persistenceFilePath = persistenceFilePath;
     this.saveInterval = saveInterval;
-    this.loadQueue().then(() => {
-      this.startPersistence();
-    });
+  }
+
+  async init(): Promise<PersistentQueue<T>> {
+    await this.loadQueue();
+    this.startPersistence();
+    return this;
   }
 
   enqueue(item: T): void {
@@ -23,20 +26,26 @@ export class PersistentQueue<T> {
     return this.queue.shift();
   }
 
+  length(): number {
+    return this.queue.length;
+  }
+
   private async loadQueue(): Promise<void> {
     try {
-      const data = await fs.readFile(this.persistenceFilePath, 'utf8');
+      const data = fs.readFileSync(this.persistenceFilePath, 'utf8');
       this.queue = JSON.parse(data);
+      if (!this.queue) this.queue = [];
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.error('Error loading queue:', err);
-      }
+      const dirpath = path.dirname(this.persistenceFilePath);
+      fs.mkdirSync(dirpath, { recursive: true });
+      fs.writeFileSync(this.persistenceFilePath, '[]');
+      this.queue = [];
     }
   }
 
-  private async saveQueue(): Promise<void> {
+  async saveQueue(): Promise<void> {
     try {
-      await fs.writeFile(this.persistenceFilePath, JSON.stringify(this.queue, null, 2));
+      fs.writeFileSync(this.persistenceFilePath, JSON.stringify(this.queue));
     } catch (err) {
       console.error('Error saving queue:', err);
     }
@@ -44,20 +53,45 @@ export class PersistentQueue<T> {
 
   private startPersistence(): void {
     this.persistenceTimer = setInterval(async () => {
-      await this.saveQueue();
+      try {
+        await this.saveQueue();
+      } catch (error) {
+        console.error('Error during persistence:', error);
+      }
     }, this.saveInterval);
-
-    const shutdownHandler = async () => {
-      await this.saveQueue();
-      process.exit();
-    };
-
-    process.on('exit', shutdownHandler);
-    process.on('SIGINT', shutdownHandler);
-    process.on('SIGTERM', shutdownHandler);
   }
 
-  stopPersistence(): void {
-    clearInterval(this.persistenceTimer);
+  async stopPersistence(): Promise<void> {
+    if (this.persistenceTimer) {
+      clearInterval(this.persistenceTimer);
+      await this.saveQueue();
+    }
+  }
+}
+
+export class ShutdownManager {
+  private static queues: PersistentQueue<any>[] = [];
+
+  static registerQueue(queue: PersistentQueue<any>): void {
+    this.queues.push(queue);
+  }
+
+  static async shutdown(): Promise<void> {
+    console.log('Shutting down...');
+    for (const queue of this.queues) {
+      await queue.stopPersistence();
+    }
+    console.log('All queues have been persisted. Exiting...');
+    process.exit();
+  }
+
+  static setup(): void {
+    process.on('SIGINT', this.shutdown.bind(this));
+    process.on('SIGTERM', this.shutdown.bind(this));
+    process.on('uncaughtException', async (err) => {
+      console.error('Uncaught exception:', err);
+      await this.shutdown();
+      process.exit(1);
+    });
   }
 }

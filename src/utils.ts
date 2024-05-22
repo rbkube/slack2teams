@@ -1,5 +1,4 @@
 import fs from 'fs';
-import { url } from 'inspector';
 import sharp from 'sharp';
 import { Readable } from 'stream';
 import { finished } from 'stream/promises';

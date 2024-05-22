@@ -1,15 +1,17 @@
+import { channel } from 'diagnostics_channel';
 import fs from 'fs';
+import cliload from 'loading-cli';
 import _ from 'lodash';
 import path from 'path';
 import { SLACK_EXPORT_PATH, STATE_DIRECTORY } from './constants';
-import cliload from 'loading-cli';
 import MSGraph from './ms-graph';
-import { sleep } from './utils';
+import { formatTime, sleep } from './utils';
+import { PersistentQueue, ShutdownManager } from './queue';
 
 type ChannelResult = {
-  channelId: string;
+  channelId?: string;
   channelName: string;
-  teamId: string;
+  teamId?: string;
 };
 
 type UserResult = {
@@ -45,7 +47,6 @@ type Mappers = {
     name: string;
     contentType: string;
   };
-  getMessage: (id: string) => ProcessedMessage;
 };
 
 const addStyle = (styleObject, text) => {
@@ -130,7 +131,7 @@ const parseTextObject = (textObj: any, mappers: Mappers, mentions: Mention[]) =>
       text = `<strong>@deleted-group</strong>`;
       break;
     default:
-      console.log(`Unhandled text object type: ${textObj.type}`);
+      // console.log(`Unhandled text object type: ${textObj.type}`);
       break;
   }
   return text;
@@ -184,7 +185,7 @@ const parseBlock = (block, mappers: Mappers, mentions: Mention[]) => {
       }
       break;
     default:
-      console.log(`Unhandled block type: ${block.type}`);
+    // console.log(`Unhandled block type: ${block.type}`);
   }
   return content;
 };
@@ -206,7 +207,7 @@ const isEmailFile = (file) => {
 };
 
 const slackBlocksToHtml = (message, mappers: Mappers) => {
-  const { blocks, attachments, files } = message;
+  const { blocks, files } = message;
   const MSattachments = [];
   const mentions: Mention[] = [];
   let html = '<div>';
@@ -218,35 +219,24 @@ const slackBlocksToHtml = (message, mappers: Mappers) => {
     });
   }
   message.quotes?.forEach((quote) => {
-    const message = mappers.getMessage(quote);
-    if (!message) {
-      html += `<blockquote>Deleted message</blockquote>`;
-      return;
-    }
-    html += `<blockquote>${message.from.user.displayName}<br />${message.body.content}<br /><a href="${message.webUrl}">View original</a></blockquote>`;
-    MSattachments.push(...message.attachments);
+    const message = slackBlocksToHtml(quote.message, mappers);
+    html += `<blockquote><strong>${quote.authorName}</strong><br /><br />${message.payload.body.content}</blockquote>`;
+    MSattachments.push(...message.payload.attachments);
+    mentions.push(...message.payload.mentions);
   });
   let attachmentsHtml = '';
   files?.forEach((file) => {
-    // if (isExternalFile(file)) {
-    //   const url = file.url_private;
-    //   html += `<a href="${url}">${url}</a>`;
-    // } else
     if (isInternalFile(file)) {
       const obj = mappers.fromSlackFileId(file.id);
       if (!obj) return;
-      const attachement = {
+      const attachment = {
         ...obj,
       };
-      // if (attachement.contentType.startsWith('image')) {
-      //   html += `<a href=${attachement.contentUrl}><img src="${attachement.contentUrl}" alt="${attachement.name}" /></a>`;
-      // } else {
       MSattachments.push({
-        ...attachement,
+        ...attachment,
         contentType: 'reference',
       });
-      attachmentsHtml += `<attachment id="${attachement.id}"></attachment>`;
-      // }
+      attachmentsHtml += `<attachment id="${attachment.id}"></attachment>`;
     }
   });
   html += attachmentsHtml;
@@ -256,7 +246,8 @@ const slackBlocksToHtml = (message, mappers: Mappers) => {
     channel.channelId
   )}/messages`;
   if (message.replyTo) {
-    route += `/${encodeURIComponent(mappers.getMessage(message.replyTo).id)}/replies`;
+    const ts = new Date(message.replyTo.split(':')[1] * 1000).getTime();
+    route += `/${encodeURIComponent(ts)}/replies`;
   }
   return {
     route,
@@ -287,13 +278,18 @@ const preprocess = (messages) => {
     }
     if (_.has(message, 'attachments')) {
       message.attachments.forEach((attachment) => {
-        if (_.has(attachment, 'message_blocks')) {
+        if (_.has(attachment, 'message_blocks[0].message')) {
           if (!msgDict[`${message.user}:${message.ts}`].quotes) {
             msgDict[`${message.user}:${message.ts}`].quotes = [];
           }
-          msgDict[`${message.user}:${message.ts}`].quotes.push(
-            `${attachment.author_id}:${attachment.ts}`
-          );
+          msgDict[`${message.user}:${message.ts}`].quotes.push({
+            authorName: attachment.author_name,
+            message: {
+              ...attachment.message_blocks[0].message,
+              user: attachment.author_id,
+              ts: attachment.ts,
+            },
+          });
         }
       });
     }
@@ -315,10 +311,6 @@ const main = async () => {
   const files = _.keyBy(
     JSON.parse(fs.readFileSync(path.join(STATE_DIRECTORY, 'files-uploaded.json'), 'utf-8')),
     'slackId'
-  );
-  const thumbs = _.keyBy(
-    JSON.parse(fs.readFileSync(path.join(STATE_DIRECTORY, 'thumbs.json'), 'utf-8')),
-    'id'
   );
 
   const messages = _(channels)
@@ -344,16 +336,20 @@ const main = async () => {
 
   const preprocessed = _.orderBy(preprocess(messages), 'ts', 'asc');
 
-  const processed = {};
-
   const mappers: Mappers = {
     fromSlackChannelId: (id) => {
-      const channel = channels[id];
-      return {
-        channelId: channel.channelId,
-        channelName: channel.slackName,
-        teamId: channel.teamId,
-      };
+      try {
+        const channel = channels[id];
+        return {
+          channelId: channel.channelId,
+          channelName: channel.slackName,
+          teamId: channel.teamId,
+        };
+      } catch (e) {
+        return {
+          channelName: 'deleted-channel',
+        };
+      }
     },
     fromSlackUserId: (id) => {
       const user = users[id];
@@ -362,7 +358,6 @@ const main = async () => {
     },
     fromSlackFileId: (id) => {
       const file = files[id];
-      const thumb = thumbs[id];
 
       if (!file) return null;
       return {
@@ -370,46 +365,102 @@ const main = async () => {
         contentUrl: file.contentUrl,
         name: file.name,
         contentType: 'reference',
-        thumbnailUrl: thumb ? thumb.url : undefined,
       };
     },
-    getMessage: (id: string) => {
-      return processed[id];
-    },
   };
+
+  ShutdownManager.setup();
+
+  // const queues: Record<string, { parents: PersistentQueue; children: PersistentQueue }> = _(
+  //   channels
+  // ).reduce(async (acc, channel) => {
+  //   const parents = await new PersistentQueue(
+  //     path.join(STATE_DIRECTORY, `queues/parents/${channel.slackId}.json`)
+  //   ).init();
+  //   const children = await new PersistentQueue(
+  //     path.join(STATE_DIRECTORY, `queues/children/${channel.slackId}.json`)
+  //   ).init();
+  //   ShutdownManager.registerQueue(parents);
+  //   ShutdownManager.registerQueue(children);
+  //   return {
+  //     ...acc,
+  //     [channel.slackId]: {
+  //       parents,
+  //       children,
+  //     },
+  //   };
+  // }, {});
+
+  const parents = await new PersistentQueue(
+    path.join(STATE_DIRECTORY, 'queues/parents.json')
+  ).init();
+  const children = await new PersistentQueue(
+    path.join(STATE_DIRECTORY, 'queues/children.json')
+  ).init();
+
+  ShutdownManager.registerQueue(parents);
+  ShutdownManager.registerQueue(children);
+
+  for (const pre of preprocessed) {
+    const msg = slackBlocksToHtml(pre, mappers);
+    const channelId = pre.channel;
+    if (pre.replyTo) {
+      children.enqueue({
+        route: msg.route,
+        init: {
+          method: 'POST',
+          body: JSON.stringify(msg.payload),
+          retries: 1,
+        },
+      });
+    } else {
+      parents.enqueue({
+        route: msg.route,
+        init: {
+          method: 'POST',
+          body: JSON.stringify(msg.payload),
+          retries: 1,
+        },
+      });
+    }
+  }
 
   console.log('Total messages to be imported:', preprocessed.length);
   console.log('Total messages in slack export:', messages.length);
 
-  const load = cliload('Importing messages to MS teams...').start();
-  let number = 0;
+  ShutdownManager.shutdown();
 
-  await MSGraph.login();
-  for (const pre of preprocessed) {
-    number++;
-    const msg = slackBlocksToHtml(pre, mappers);
-    load.start(`Importing message ${number}/${preprocessed.length}...`);
-    try {
-      const id = new Date(msg.payload.createdDateTime).getTime();
-      let res = await MSGraph.fetch(msg.route, {
-        method: 'POST',
-        body: JSON.stringify(msg.payload),
-        retries: 1,
-      })
-        .then((res) => res.json())
-        .catch((e) => {
-          if (e?.response?.error?.code !== 'Conflict') console.dir(e, { depth: null });
-          return null;
-        });
-      if (!res) res = await MSGraph.fetch(`${msg.route}/${id}`, {}).then((res) => res.json());
-      processed[pre.user + ':' + pre.ts] = res;
-      await sleep(200);
-    } catch (e) {
-      load.fail(`Message ${number}/${preprocessed.length} failed to import.`);
-      console.dir(e, { depth: null });
-    }
-  }
-  load.succeed('All messages imported successfully.');
+  // const load = cliload('Importing messages to MS teams...').start();
+  // let number = 0;
+
+  // await MSGraph.login();
+  // let totalTime = 0;
+  // for (const pre of preprocessed) {
+  //   number++;
+  //   const start = Date.now();
+  //   const average = totalTime / number;
+  //   const msg = slackBlocksToHtml(pre, mappers);
+  //   load.start(
+  //     `Importing message ${number}/${preprocessed.length}... | ${formatTime(
+  //       average * (preprocessed.length - number)
+  //     )} remaining`
+  //   );
+  //   try {
+  //     let res = await MSGraph.fetch(msg.route, {
+  //       method: 'POST',
+  //       body: JSON.stringify(msg.payload),
+  //       retries: 1,
+  //     }).then((res) => res.json());
+  //     processed[pre.user + ':' + pre.ts] = res;
+  //     const now = Date.now();
+  //     const time2sleep = now - start < 200 ? 200 - (now - start) : 0;
+  //     await sleep(time2sleep);
+  //   } catch (e) {
+  //     load.fail(`Message ${number}/${preprocessed.length} failed to import.`);
+  //     console.dir(e, { depth: null });
+  //   }
+  // }
+  // load.succeed('All messages imported successfully.');
 };
 
 main();

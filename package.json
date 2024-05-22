@@ -5,13 +5,15 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
+    "clean-data": "tsc && node dist/clean-data.js",
     "migrate-users": "tsc && node dist/users.js",
     "migrate-channels": "tsc && node dist/channels.js",
     "sharepoint": "tsc && node dist/sharepoint.js",
     "download-files": "tsc && node dist/download-files.js",
     "generate-thumbnails": "tsc && node dist/thumbnails.js",
     "migrate-files": "tsc && node dist/migrate-files.js",
-    "migrate-messages": "tsc && node dist/messages.js",
+    "parse-messages": "tsc && node dist/parse-messages.js",
+    "migrate-messages": "tsc && node dist/migrate-messages.js",
     "complete-migration": "tsc && node dist/finish.js",
     "show-token": "tsc && node dist/token.js"
   },
