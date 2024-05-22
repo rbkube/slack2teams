@@ -3,23 +3,28 @@ import path from 'path';
 import MSGraph from './ms-graph';
 import { STATE_DIRECTORY } from './constants';
 import sanitize from 'sanitize-filename';
+import cliload from 'loading-cli';
+import _ from 'lodash';
 
 const main = async () => {
   try {
     await MSGraph.login();
+    const load = cliload('Uploading files').start();
 
     const channelFolders = JSON.parse(
       fs.readFileSync(path.join(STATE_DIRECTORY, 'channel-folders.json'), 'utf-8')
     );
 
     const filesMetaRaw = fs.readFileSync(path.join(STATE_DIRECTORY, 'files.json'), 'utf-8');
-    const files = JSON.parse(filesMetaRaw);
+    const files = _.filter(JSON.parse(filesMetaRaw), (file) => !file.error);
 
     const res = [];
+    let number = 0;
     for (const file of files) {
-      if (file.error) continue;
+      number++;
       const fileName = sanitize(`${file.id}-${file.name}`, { replacement: '_' });
       const fileContent = fs.readFileSync(file.filepath);
+      load.start(`${number}/${files.length} Uploading file: ${file.id}`);
       const contentType = file.mimetype;
       const sharePoint = channelFolders.find((folder) => folder.slackChannelId === file.channelId);
       const spFile = await MSGraph.fetch(
@@ -55,7 +60,6 @@ const main = async () => {
         name: spFile.name,
         contentType,
       });
-      console.log(`Uploaded file: ${fileName}`);
     }
     fs.writeFileSync(path.join(STATE_DIRECTORY, 'files-uploaded.json'), JSON.stringify(res));
     console.table(res);
