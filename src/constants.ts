@@ -1,6 +1,6 @@
-import path from 'path';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
 
@@ -18,4 +18,5 @@ export const USER_MIGRATIONS_PATH = path.join(process.cwd(), process.env.USER_MI
 
 // Internal constants
 export const STATE_DIRECTORY = path.join(process.cwd(), 'state');
+export const SUPPORTED_MSG_TYPES = ['tombstone', 'bot_message', 'undefined'];
 if (!fs.existsSync(STATE_DIRECTORY)) fs.mkdirSync(STATE_DIRECTORY, { recursive: true });

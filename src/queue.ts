@@ -22,8 +22,8 @@ export class PersistentQueue<T = any> {
     this.queue.push(item);
   }
 
-  dequeue(): T | undefined {
-    return this.queue.shift();
+  dequeue(n: number = 1): T[] | undefined {
+    return this.queue.splice(0, n);
   }
 
   length(): number {

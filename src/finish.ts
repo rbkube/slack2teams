@@ -1,9 +1,8 @@
-import { channel } from 'diagnostics_channel';
 import fs from 'fs';
-import path from 'path';
-import MSGraph, { MSGraphBeta } from './ms-graph';
 import _ from 'lodash';
+import path from 'path';
 import { STATE_DIRECTORY } from './constants';
+import MSGraph, { MSGraphBeta } from './ms-graph';
 
 const addUserToTeam = async (teamId: string, userId: string, roles: string[] = []) => {
   try {

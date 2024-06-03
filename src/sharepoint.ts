@@ -2,6 +2,8 @@ import path from 'path';
 import MSGraph from './ms-graph';
 import fs from 'fs';
 import { STATE_DIRECTORY } from './constants';
+import { processInBatches } from './utils';
+import cliload from 'loading-cli';
 
 const main = async () => {
   await MSGraph.login();
@@ -9,27 +11,28 @@ const main = async () => {
     fs.readFileSync(path.join(STATE_DIRECTORY, 'channels.json'), 'utf-8')
   );
 
-  const channelFolders = [];
-  for (const channel of channels) {
-    console.log(`Fetching files folder for channel ${channel.slackName}`);
+  const load = cliload('Fetching channel folders').start();
+
+  const fetchChannelFolder = async (channel) => {
+    load.start(`Fetching files folder for channel ${channel.slackName}`);
     const folder = await MSGraph.fetch(
       `teams/${channel.teamId}/channels/${channel.channelId}/filesFolder`,
       {}
     ).then((res) => res.json());
-    const res = {
+    return {
       slackChannelId: channel.slackId,
       driveItemId: folder.id,
       driveId: folder.parentReference.driveId,
     };
-    channelFolders.push(res);
-  }
+  };
 
-  console.table(channelFolders);
+  const channelFolders = await processInBatches(channels, 5, 10, fetchChannelFolder);
+
   fs.writeFileSync(
     path.join(STATE_DIRECTORY, 'channel-folders.json'),
     JSON.stringify(channelFolders, null, 2)
   );
-  console.log('Channel folders saved to state/channel-folders.json');
+  load.succeed('Channel folders saved to state/channel-folders.json');
 };
 
 main();

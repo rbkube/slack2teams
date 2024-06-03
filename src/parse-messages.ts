@@ -1,12 +1,9 @@
-import { channel } from 'diagnostics_channel';
 import fs from 'fs';
-import cliload from 'loading-cli';
 import _ from 'lodash';
 import path from 'path';
 import { SLACK_EXPORT_PATH, STATE_DIRECTORY } from './constants';
-import MSGraph from './ms-graph';
-import { formatTime, sleep } from './utils';
 import { PersistentQueue, ShutdownManager } from './queue';
+import { ts2ISO, ts2ms } from './utils';
 
 type ChannelResult = {
   channelId?: string;
@@ -17,25 +14,6 @@ type ChannelResult = {
 type UserResult = {
   id: string;
   displayName: string;
-};
-
-type ProcessedMessage = {
-  createdDateTime: string;
-  id: string;
-  from: {
-    user: UserResult;
-  };
-  body: {
-    contentType: string;
-    content: string;
-  };
-  attachments: {
-    id: string;
-    contentUrl: string;
-    name: string;
-  }[];
-  mentions: Mention[];
-  webUrl?: string;
 };
 
 type Mappers = {
@@ -246,13 +224,13 @@ const slackBlocksToHtml = (message, mappers: Mappers) => {
     channel.channelId
   )}/messages`;
   if (message.replyTo) {
-    const ts = new Date(message.replyTo.split(':')[1] * 1000).getTime();
+    const ts = message.replyTo.split(':')[1];
     route += `/${encodeURIComponent(ts)}/replies`;
   }
   return {
     route,
     payload: {
-      createdDateTime: new Date(Number(message.ts) * 1000).toISOString(),
+      createdDateTime: ts2ISO(message.ts),
       // ts: message.ts,
       from: {
         user: { ...mappers.fromSlackUserId(message.user), userIdentityType: 'aadUser' },
@@ -267,9 +245,24 @@ const slackBlocksToHtml = (message, mappers: Mappers) => {
   };
 };
 
+const deduplicateTimestamps = (messages) => {
+  const grouped = _.groupBy(messages, 'ts');
+  const duplicates = _.filter(grouped, (v) => v.length > 1);
+  if (duplicates.length === 0) return messages;
+  else {
+    const deduplicated = _.flatMap(grouped, (msgs) =>
+      _.map(msgs, (msg, i) => ({ ...msg, ts: msg.ts + i }))
+    );
+    return deduplicateTimestamps(deduplicated);
+  }
+};
+
 const preprocess = (messages) => {
-  const msgDict = _.keyBy(messages, (msg) => `${msg.user}:${msg.ts}`);
-  messages.forEach((message) => {
+  const converted = _.map(messages, (msg) => ({ ...msg, ts: ts2ms(msg.ts) }));
+  const deduplicated = deduplicateTimestamps(converted);
+
+  const msgDict = _.keyBy(deduplicated, (msg) => `${msg.user}:${msg.ts}`);
+  deduplicated.forEach((message) => {
     if (_.has(message, 'replies')) {
       message.replies.forEach((reply) => {
         if (msgDict[`${reply.user}:${reply.ts}`])
@@ -326,7 +319,9 @@ const main = async () => {
             channel: channel.slackId,
           }))
           .filter(
-            (msg) => msg.type === 'message' && (!msg.subtype || msg.subtype === 'thread_broadcast')
+            (msg) =>
+              msg.type === 'message' &&
+              (!msg.subtype || msg.subtype === 'thread_broadcast' || msg.subtype === 'bot')
           )
           .value();
       });

@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { Readable } from 'stream';
 import { finished } from 'stream/promises';
 import { ReadableStream } from 'stream/web';
+import { DateTime } from 'luxon';
 
 export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -67,6 +68,27 @@ export const downloadFile = async (url: string, filepath: string, headers: any =
   const { body } = await fetchWithRetry(url, { headers });
   const filestream = fs.createWriteStream(filepath);
   await finished(Readable.fromWeb(body as ReadableStream<any>).pipe(filestream));
+};
+
+export const processInBatches = async (items, batchSize, maxRequestsPerSecond, processItem) => {
+  const results = [];
+  const batchCount = Math.ceil(items.length / batchSize);
+  const interval = 1000 / maxRequestsPerSecond;
+
+  for (let i = 0; i < batchCount; i++) {
+    const batchStart = i * batchSize;
+    const batchEnd = Math.min(batchStart + batchSize, items.length);
+    const batch = items.slice(batchStart, batchEnd);
+
+    const batchResults = await Promise.all(batch.map((item) => processItem(item)));
+    results.push(...batchResults);
+
+    if (i < batchCount - 1) {
+      await sleep(interval);
+    }
+  }
+
+  return results;
 };
 
 export const downloadFromSlackWithCookieToken = ({ slack_url, cookieToken, filepath }) => {
@@ -137,4 +159,14 @@ export function scaleDimensions(originalWidth, originalHeight, maxHeight = 200) 
   const scaledWidth = Math.round(maxHeight * aspectRatio);
 
   return { width: scaledWidth, height: scaledHeight };
+}
+
+export function ts2ms(ts: string) {
+  const [seconds, microseconds] = ts.split('.').map(Number);
+  return Math.floor(seconds * 1000 + microseconds / 1000);
+}
+
+export function ts2ISO(ts: string) {
+  const milliseconds = ts2ms(ts);
+  return new Date(milliseconds).toISOString();
 }

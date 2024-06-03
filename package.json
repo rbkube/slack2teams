@@ -1,7 +1,7 @@
 {
   "name": "slack2teams",
   "version": "0.1.0",
-  "description": "Slack to MS Teams migration tool",
+  "description": "Slack to MS Teams migration toolkit",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
@@ -32,6 +32,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/lodash": "^4.17.1",
+    "@types/luxon": "^3.4.2",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^20.12.11",
     "typescript": "^5.4.5"
@@ -42,6 +43,7 @@
     "dotenv": "^16.4.5",
     "loading-cli": "^1.1.2",
     "lodash": "^4.17.21",
+    "luxon": "^3.4.4",
     "mime-types": "^2.1.35",
     "sanitize-filename": "^1.6.3",
     "sharp": "^0.33.4",

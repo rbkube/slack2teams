@@ -1,7 +1,7 @@
-import path from 'path';
-import { SLACK_EXPORT_PATH } from './constants';
 import fs from 'fs';
 import _ from 'lodash';
+import path from 'path';
+import { SLACK_EXPORT_PATH } from './constants';
 
 const preprocess = (messages) => {
   const msgDict = _.keyBy(messages, (msg) => `${msg.user}:${msg.ts}`);
